@@ -21,9 +21,11 @@ import iso8601
 import json
 import jsonpatch
 import operator
+import re
 import six
 import time
 import warnings
+import yaml
 
 import dogpile.cache
 import munch
@@ -3215,12 +3217,33 @@ class OpenStackCloud(
                     "Parameter 'port_security_enabled' must be a bool")
             network['port_security_enabled'] = port_security_enabled
 
+        #apic_params_list = ['apic__nested_domain_name', 'apic__nested_domain_type',
+        #                    'apic__nested_domain_infra_vlan', 'apic__nested_domain_node_network_vlan',
+        #                    'apic__nested_domain_service_vlan', 'apic__nested_domain_allowed_vlans'] 
+        for key in os.environ.keys():
+           if re.search("^apic__", key):
+              apic_param = key
+              if apic_param == "apic__nested_domain_allowed_vlans" or apic_param == 'apic__distinguished_names':
+                 if apic_param == 'apic__distinguished_names':
+                    network[re.sub('__',':',apic_param)] = json.loads(re.sub('u\'', '\'', os.environ[apic_param]).replace("'", "\""))
+                 else:
+                    network[re.sub('__',':',apic_param)] = re.sub('u\'', '\'', os.environ[apic_param])
+              else:
+                 network[re.sub('__',':',apic_param)] = os.environ[apic_param]
+
         data = self._network_client.post("/networks.json",
                                          json={'network': network})
 
         # Reset cache so the new network is picked up
         self._reset_network_caches()
         return self._get_and_munchify('network', data)
+
+    def convert_keys_to_string(self, dictionary):
+       """Recursively converts dictionary keys to strings."""
+       if not isinstance(dictionary, dict):
+           return dictionary
+       return dict((str(k), self.convert_keys_to_string(v)) 
+           for k, v in dictionary.items())
 
     def delete_network(self, name_or_id):
         """Delete a network.
